@@ -575,12 +575,19 @@ body{background:var(--bg);color:var(--text);font-family:var(--font-ui);font-size
     <div class="ctitle"><em>◈</em> Dimensions</div>
     <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center;flex-wrap:wrap">
       <span style="font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--text3);text-transform:uppercase">Origin:</span>
-      <button class="omode-btn active" id="omode-corner" onclick="setOriginMode('corner');playClick()">📐 From Corner</button>
-      <button class="omode-btn" id="omode-center" onclick="setOriginMode('center');playClick()">🎯 From Center</button>
+      <button class="omode-btn active" id="omode-center" onclick="setOriginMode('center');playClick()">🎯 От центра</button>
+      <button class="omode-btn" id="omode-corner" onclick="setOriginMode('corner');playClick()">📐 Под угол</button>
+    </div>
+    <div id="corner-dirs" style="display:none;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+      <span style="font-size:11px;font-weight:700;letter-spacing:.1em;color:var(--text3);text-transform:uppercase;white-space:nowrap">Направление:</span>
+      <button class="omode-btn active" id="cdir-pp" onclick="setCornerDir(1,1);playClick()">+X +Z</button>
+      <button class="omode-btn" id="cdir-np" onclick="setCornerDir(-1,1);playClick()">-X +Z</button>
+      <button class="omode-btn" id="cdir-pn" onclick="setCornerDir(1,-1);playClick()">+X -Z</button>
+      <button class="omode-btn" id="cdir-nn" onclick="setCornerDir(-1,-1);playClick()">-X -Z</button>
     </div>
     <div class="dgrid">
-      <div class="dbox"><label id="lbl-l">LENGTH</label><input class="dinput" type="number" id="inp-l" value="10" min="1" oninput="generate()"><div class="dhint" id="hint-l">blocks forward</div></div>
-      <div class="dbox"><label>WIDTH</label><input class="dinput" type="number" id="inp-w" value="10" min="1" oninput="generate()"><div class="dhint" id="hint-w">blocks wide (from corner)</div></div>
+      <div class="dbox"><label id="lbl-l">LENGTH</label><input class="dinput" type="number" id="inp-l" value="10" min="1" oninput="generate()"><div class="dhint" id="hint-l">радиус по Z</div></div>
+      <div class="dbox"><label>WIDTH</label><input class="dinput" type="number" id="inp-w" value="10" min="1" oninput="generate()"><div class="dhint" id="hint-w">радиус по X</div></div>
       <div class="dbox"><label id="lbl-h">HEIGHT</label><input class="dinput" type="number" id="inp-h" value="3" min="1" oninput="generate()"><div class="dhint">from feet level</div></div>
     </div>
   </div>
@@ -1135,40 +1142,93 @@ function getBlock(){
 function fmt(n){return n===0?'~':n>0?'~'+n:'~'+n}
 function bc(x1,y1,z1,x2,y2,z2){return `/fill ${fmt(x1)} ${fmt(y1)} ${fmt(z1)} ${fmt(x2)} ${fmt(y2)} ${fmt(z2)} ${getBlock()}`}
 
-/* ══ ORIGIN MODE: 'corner' (от угла) | 'center' (от центра) ══ */
-let originMode='corner';
-function setOriginMode(m){
-  originMode=m;
-  document.getElementById('omode-corner').className='omode-btn'+(m==='corner'?' active':'');
-  document.getElementById('omode-center').className='omode-btn'+(m==='center'?' active':'');
-  const hw=document.getElementById('hint-w');
-  if(hw) hw.textContent=m==='corner'?'blocks wide (from corner)':'blocks wide (centered, no loss)';
+/* ══ ORIGIN MODE: 'center' (от центра — радиус) | 'corner' (под угол) ══ */
+let originMode='center';
+let cornerDirX=1, cornerDirZ=1;
+
+function setCornerDir(dx,dz){
+  cornerDirX=dx; cornerDirZ=dz;
+  // update button highlight
+  const map={pp:[1,1],np:[-1,1],pn:[1,-1],nn:[-1,-1]};
+  Object.entries(map).forEach(([key,[x,z]])=>{
+    const b=document.getElementById('cdir-'+key);
+    if(b) b.className='omode-btn'+(x===dx&&z===dz?' active':'');
+  });
   generate();
 }
 
-/* Возвращает [начало, конец] смещения для оси шириной w.
-   corner: [0, w-1]  — область строится в + сторону от игрока
-   center: без потери блока — нечётное: [-floor(w/2), floor(w/2)]
-                              чётное:  [-(w/2), (w/2)-1]           */
-function wOff(w){
-  if(originMode==='corner') return [0, w-1];
-  const h=Math.floor(w/2);
-  return [-(h), w%2===0 ? h-1 : h];
+function setOriginMode(m){
+  originMode=m;
+  document.getElementById('omode-center').className='omode-btn'+(m==='center'?' active':'');
+  document.getElementById('omode-corner').className='omode-btn'+(m==='corner'?' active':'');
+  const cd=document.getElementById('corner-dirs');
+  if(cd) cd.style.display=m==='corner'?'flex':'none';
+  const hw=document.getElementById('hint-w');
+  if(hw) hw.textContent=m==='center'?'радиус по X':'ширина от угла';
+  const hl=document.getElementById('hint-l');
+  if(hl) hl.textContent=m==='center'?'радиус по Z':'blocks forward';
+  generate();
+}
+
+/* Возвращает [x1, x2, z1, z2] для текущего режима */
+function getCornerCoords(width, length){
+  if(originMode==='center'){
+    // центр: радиус во все стороны, блок под игроком считается
+    return [-width, width, -length, length];
+  } else {
+    // под угол: от 0 в выбранную сторону
+    const x2 = cornerDirX === 1 ? (width - 1) : -(width - 1);
+    const z2 = cornerDirZ === 1 ? (length - 1) : -(length - 1);
+    return [0, x2, 0, z2];
+  }
 }
 
 function generate(){
   const L=Math.max(1,parseInt(document.getElementById('inp-l').value)||1);
   const W=Math.max(1,parseInt(document.getElementById('inp-w').value)||1);
   const H=Math.max(1,parseInt(document.getElementById('inp-h').value)||1);
-  const[wn,wp]=wOff(W);
-  const[w2n,w2p]=wOff(H);
   const out=document.getElementById('cmd-out');let cmd='',fr='',to='',sz='';
+
+  if(originMode==='center'){
+    // Центр: радиус WIDTH по X, радиус LENGTH по Z, глубина под ногами
+    const x1=-W, x2=W;
+    const z1=-L, z2=L;
+    const y1=-H, y2=-1;
+    if(direction==='north'||direction==='south'||direction==='east'||direction==='west'
+       ||direction==='nw'||direction==='ne'||direction==='sw'||direction==='se'){
+      cmd=bc(x1,y1,z1,x2,y2,z2);
+      fr=`${fmt(x1)} ${fmt(y1)} ${fmt(z1)}`;
+      to=`${fmt(x2)} ${fmt(y2)} ${fmt(z2)}`;
+      sz=`${W*2+1}×${H}×${L*2+1}`;
+    } else if(direction==='up'){
+      cmd=bc(x1,0,z1,x2,H-1,z2);
+      fr=`${fmt(x1)} ~ ${fmt(z1)}`;to=`${fmt(x2)} ${fmt(H-1)} ${fmt(z2)}`;sz=`${W*2+1}×${H}×${L*2+1}`;
+    } else if(direction==='down'){
+      cmd=bc(x1,-H,z1,x2,-1,z2);
+      fr=`${fmt(x1)} ${fmt(-H)} ${fmt(z1)}`;to=`${fmt(x2)} ~-1 ${fmt(z2)}`;sz=`${W*2+1}×${H}×${L*2+1}`;
+    } else if(direction==='up-north'){
+      let ls=[];for(let i=0;i<L;i++)ls.push(bc(x1,i,-(i+1),x2,i+H-1,-(i+1)));
+      cmd=ls.join('\n');out.className='outbox multi';fr=`step 1/${L}`;to=`step ${L}`;sz=`${W*2+1}×${H}×${L}`;out.textContent=cmd;setPrev(fr,to,sz);return;
+    } else if(direction==='down-south'){
+      let ls=[];for(let i=0;i<L;i++)ls.push(bc(x1,-i,i+1,x2,-(i+H-1),i+1));
+      cmd=ls.join('\n');out.className='outbox multi';fr=`step 1/${L}`;to=`step ${L}`;sz=`${W*2+1}×${H}×${L}`;out.textContent=cmd;setPrev(fr,to,sz);return;
+    } else if(direction==='down-north'){
+      let ls=[];for(let i=0;i<L;i++)ls.push(bc(x1,-i,-(i+1),x2,-(i+H-1),-(i+1)));
+      cmd=ls.join('\n');out.className='outbox multi';fr=`step 1/${L}`;to=`step ${L}`;sz=`${W*2+1}×${H}×${L}`;out.textContent=cmd;setPrev(fr,to,sz);return;
+    }
+    out.className='outbox';out.textContent=cmd;setPrev(fr,to,sz);
+    return;
+  }
+
+  // Corner mode
+  const [cx1,cx2,cz1,cz2]=getCornerCoords(W,L);
+  const wn=Math.min(cx1,cx2), wp=Math.max(cx1,cx2);
   if(direction==='north'){cmd=bc(wn,0,-(L),wp,H-1,-1);fr=`${fmt(wn)} ~ ${fmt(-L)}`;to=`${fmt(wp)} ${fmt(H-1)} ~-1`;sz=`${W}×${H}×${L}`;}
   else if(direction==='south'){cmd=bc(wn,0,1,wp,H-1,L);fr=`${fmt(wn)} ~ ~1`;to=`${fmt(wp)} ${fmt(H-1)} ${fmt(L)}`;sz=`${W}×${H}×${L}`;}
   else if(direction==='east'){cmd=bc(1,0,wn,L,H-1,wp);fr=`~1 ~ ${fmt(wn)}`;to=`${fmt(L)} ${fmt(H-1)} ${fmt(wp)}`;sz=`${L}×${H}×${W}`;}
   else if(direction==='west'){cmd=bc(-L,0,wn,-1,H-1,wp);fr=`${fmt(-L)} ~ ${fmt(wn)}`;to=`~-1 ${fmt(H-1)} ${fmt(wp)}`;sz=`${L}×${H}×${W}`;}
-  else if(direction==='up'){cmd=bc(wn,1,w2n,wp,L,w2p);fr=`${fmt(wn)} ~1 ${fmt(w2n)}`;to=`${fmt(wp)} ${fmt(L)} ${fmt(w2p)}`;sz=`${W}×${L}×${H}`;}
-  else if(direction==='down'){cmd=bc(wn,-L,w2n,wp,-1,w2p);fr=`${fmt(wn)} ${fmt(-L)} ${fmt(w2n)}`;to=`${fmt(wp)} ~-1 ${fmt(w2p)}`;sz=`${W}×${L}×${H}`;}
+  else if(direction==='up'){cmd=bc(cx1,1,cz1,cx2,L,cz2);fr=`${fmt(cx1)} ~1 ${fmt(cz1)}`;to=`${fmt(cx2)} ${fmt(L)} ${fmt(cz2)}`;sz=`${W}×${L}×${Math.abs(cz2-cz1)+1}`;}
+  else if(direction==='down'){cmd=bc(cx1,-L,cz1,cx2,-1,cz2);fr=`${fmt(cx1)} ${fmt(-L)} ${fmt(cz1)}`;to=`${fmt(cx2)} ~-1 ${fmt(cz2)}`;sz=`${W}×${L}×${Math.abs(cz2-cz1)+1}`;}
   else if(direction==='nw'){cmd=bc(-L,0,-L,-1,H-1,-1);fr=`${fmt(-L)} ~ ${fmt(-L)}`;to=`~-1 ${fmt(H-1)} ~-1`;sz=`${L}×${H}×${L}`;}
   else if(direction==='ne'){cmd=bc(1,0,-L,L,H-1,-1);fr=`~1 ~ ${fmt(-L)}`;to=`${fmt(L)} ${fmt(H-1)} ~-1`;sz=`${L}×${H}×${L}`;}
   else if(direction==='sw'){cmd=bc(-L,0,1,-1,H-1,L);fr=`${fmt(-L)} ~ ~1`;to=`~-1 ${fmt(H-1)} ${fmt(L)}`;sz=`${L}×${H}×${L}`;}
